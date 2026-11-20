@@ -20,6 +20,9 @@ package kgateway
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
 
+// OAuth2 client assertions: tokens for the ServiceAccount a GatewayExtension references
+// +kubebuilder:rbac:groups="",resources=serviceaccounts/token,verbs=create
+
 // jwks store controller that require extra permissions
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;patch;update;delete
 

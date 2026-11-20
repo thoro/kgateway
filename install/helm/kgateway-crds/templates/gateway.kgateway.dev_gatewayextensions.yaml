@@ -1546,6 +1546,41 @@ spec:
                     description: Credentials specifies the Oauth2 client credentials
                       to use for authentication.
                     properties:
+                      clientAssertion:
+                        description: |-
+                          ClientAssertion authenticates the client with a token for a ServiceAccount instead of a
+                          client secret. The controller requests the token from the Kubernetes API and sends it as
+                          client_assertion (RFC 7523) in the token requests, renewing it before it expires.
+                          The authorization server must trust the cluster's service account issuer for this
+                          ServiceAccount, for example through a federated identity credential.
+                          Exactly one of ClientSecretRef or ClientAssertion must be set.
+                        properties:
+                          audience:
+                            description: |-
+                              Audience is the audience of the token, as expected by the authorization server,
+                              for example api://AzureADTokenExchange for Microsoft Entra ID.
+                            minLength: 1
+                            type: string
+                          serviceAccountRef:
+                            description: |-
+                              ServiceAccountRef is the ServiceAccount, in the namespace of the GatewayExtension, that the
+                              token is issued for. Its subject is system:serviceaccount:<namespace>:<name>.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        required:
+                        - audience
+                        - serviceAccountRef
+                        type: object
                       clientID:
                         description: |-
                           ClientID specifies the client ID issued to the client during the registration process.
@@ -1576,6 +1611,7 @@ spec:
                           ClientSecretRef specifies a Secret that contains the client secret stored in the key 'client-secret'
                           to use in the authentication request to obtain the access token.
                           Refer to https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1 for more details.
+                          Exactly one of ClientSecretRef or ClientAssertion must be set.
                         properties:
                           name:
                             default: ""
@@ -1588,13 +1624,15 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
-                    required:
-                    - clientSecretRef
                     type: object
                     x-kubernetes-validations:
                     - message: exactly one of the fields in [clientID clientIDRef]
                         must be set
                       rule: '[has(self.clientID),has(self.clientIDRef)].filter(x,x==true).size()
+                        == 1'
+                    - message: exactly one of the fields in [clientSecretRef clientAssertion]
+                        must be set
+                      rule: '[has(self.clientSecretRef),has(self.clientAssertion)].filter(x,x==true).size()
                         == 1'
                   denyRedirect:
                     description: |-

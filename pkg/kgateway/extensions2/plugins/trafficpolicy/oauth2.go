@@ -44,6 +44,11 @@ const (
 	clientSecretKey             = "client-secret"
 	defaultTokenEndpointTimeout = 15 * time.Second
 
+	// oauth2AuthTypeClientAssertion is Envoy's OAuth2Config.AuthType CLIENT_ASSERTION: the token
+	// secret is sent unchanged as client_assertion.
+	// TODO: use the go-control-plane constant once it has the value.
+	oauth2AuthTypeClientAssertion envoyoauth2v3.OAuth2Config_AuthType = 4
+
 	oauthJWTRequirementName     = "oauth2"
 	oauthJWTAccessTokenProvider = "oauth2/accessToken" //nolint:gosec // G101: This is only an identifier within the Envoy filter, not a credential
 	oauthJWTIDTokenProvider     = "oauth2/idToken"     //nolint:gosec // G101: This is only an identifier within the Envoy filter, not a credential
@@ -160,6 +165,7 @@ func buildOAuth2ProviderConfig(
 	backends *krtcollections.BackendIndex,
 	secrets *krtcollections.SecretIndex,
 	discoverer *oidcProviderConfigDiscoverer,
+	saTokens *serviceAccountTokens,
 ) (*oauthPerProviderConfig, error) {
 	in := ext.OAuth2
 
@@ -235,20 +241,40 @@ func buildOAuth2ProviderConfig(
 		jwksBackend = resolved
 	}
 
-	// Fetch the client credentials
-	credSecret, err := secrets.GetSecret(krtctx,
-		krtcollections.From{GroupKind: wellknown.GatewayExtensionGVK.GroupKind(), Namespace: ext.Namespace},
-		gwv1.SecretObjectReference{
-			Name: gwv1.ObjectName(in.Credentials.ClientSecretRef.Name), Namespace: new(gwv1.Namespace(ext.Namespace)),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	clientSecretData, ok := credSecret.Data[clientSecretKey]
-	if !ok || len(clientSecretData) == 0 {
-		return nil, fmt.Errorf("%s not found or empty in secret %s referenced by GatewayExtension %s",
-			clientSecretKey, credSecret.ResourceName(), ext.ResourceName())
+	// Fetch the client credential: a ServiceAccount token sent as client assertion, or the
+	// client secret.
+	authType := envoyoauth2v3.OAuth2Config_URL_ENCODED_BODY
+	var tokenSecretName string
+	var tokenSecretData []byte
+	if key, ok := clientAssertionKey(ext); ok {
+		saTokens.markDependant(krtctx)
+		token, err := saTokens.get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		authType = oauth2AuthTypeClientAssertion
+		tokenSecretName = oauthClientAssertionName(ext.Name, ext.Namespace)
+		tokenSecretData = []byte(token)
+	} else {
+		if in.Credentials.ClientSecretRef == nil {
+			return nil, errors.New("oauth2 credentials need clientSecretRef or clientAssertion")
+		}
+		credSecret, err := secrets.GetSecret(krtctx,
+			krtcollections.From{GroupKind: wellknown.GatewayExtensionGVK.GroupKind(), Namespace: ext.Namespace},
+			gwv1.SecretObjectReference{
+				Name: gwv1.ObjectName(in.Credentials.ClientSecretRef.Name), Namespace: new(gwv1.Namespace(ext.Namespace)),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		clientSecretData, ok := credSecret.Data[clientSecretKey]
+		if !ok || len(clientSecretData) == 0 {
+			return nil, fmt.Errorf("%s not found or empty in secret %s referenced by GatewayExtension %s",
+				clientSecretKey, credSecret.ResourceName(), ext.ResourceName())
+		}
+		tokenSecretName = oauthClientSecretName(in.Credentials.ClientSecretRef.Name, ext.Namespace)
+		tokenSecretData = clientSecretData
 	}
 	clientID := in.Credentials.ClientID
 	if in.Credentials.ClientIDRef != nil {
@@ -315,6 +341,7 @@ func buildOAuth2ProviderConfig(
 				Timeout: durationpb.New(defaultTokenEndpointTimeout),
 			},
 			AuthorizationEndpoint: authorizationEndpoint,
+			AuthType:              authType,
 			ForwardBearerToken:    forwardBearerToken,
 			// Preserve the Authorization header by default unless it is being used to explicitly forward the access(bearer) token.
 			// This is useful when the client explicitly sets the Authorization header, e.g., for basic auth
@@ -323,7 +350,7 @@ func buildOAuth2ProviderConfig(
 			Credentials: &envoyoauth2v3.OAuth2Credentials{
 				ClientId: clientID,
 				TokenSecret: &envoytlsv3.SdsSecretConfig{
-					Name:      oauthClientSecretName(in.Credentials.ClientSecretRef.Name, ext.Namespace),
+					Name:      tokenSecretName,
 					SdsConfig: adsConfigSource(),
 				},
 				TokenFormation: &envoyoauth2v3.OAuth2Credentials_HmacSecret{
@@ -407,12 +434,12 @@ func buildOAuth2ProviderConfig(
 		jwtCfg: jwtCfg,
 		secrets: []*envoytlsv3.Secret{
 			{
-				Name: oauthClientSecretName(in.Credentials.ClientSecretRef.Name, ext.Namespace),
+				Name: tokenSecretName,
 				Type: &envoytlsv3.Secret_GenericSecret{
 					GenericSecret: &envoytlsv3.GenericSecret{
 						Secret: &envoycorev3.DataSource{
 							Specifier: &envoycorev3.DataSource_InlineBytes{
-								InlineBytes: clientSecretData,
+								InlineBytes: tokenSecretData,
 							},
 						},
 					},
@@ -527,6 +554,10 @@ func buildOAuth2JWTConfig(
 
 func oauthClientSecretName(name, namespace string) string {
 	return fmt.Sprintf("oauth2/client_secret/%s/%s", namespace, name)
+}
+
+func oauthClientAssertionName(name, namespace string) string {
+	return fmt.Sprintf("oauth2/client_assertion/%s/%s", namespace, name)
 }
 
 func oauthHMACSecretName(name, namespace string) string {

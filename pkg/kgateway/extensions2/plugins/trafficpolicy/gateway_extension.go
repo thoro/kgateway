@@ -134,15 +134,23 @@ func TranslateGatewayExtensionBuilder(
 	)
 	go oidcDiscoverer.run(ctx)
 
-	return gatewayExtensionBuilder(ctx, commoncol, oidcDiscoverer)
+	saTokens := newServiceAccountTokens(
+		commoncol.Client.Kube(),
+		commoncol.GatewayExtensions.List,
+		commoncol.KrtOpts.ToOptions("OAuth2ClientAssertionTrigger")...,
+	)
+	go saTokens.run(ctx)
+
+	return gatewayExtensionBuilder(ctx, commoncol, oidcDiscoverer, saTokens)
 }
 
 // gatewayExtensionBuilder is split out of TranslateGatewayExtensionBuilder so that tests can
-// supply a discoverer with shorter refresh intervals than the production defaults.
+// supply a discoverer and token cache with shorter refresh intervals than the production defaults.
 func gatewayExtensionBuilder(
 	ctx context.Context,
 	commoncol *collections.CommonCollections,
 	oidcDiscoverer *oidcProviderConfigDiscoverer,
+	saTokens *serviceAccountTokens,
 ) func(krtctx krt.HandlerContext, gExt ir.GatewayExtension) *TrafficPolicyGatewayExtensionIR {
 	return func(krtctx krt.HandlerContext, gExt ir.GatewayExtension) *TrafficPolicyGatewayExtensionIR {
 		p := &TrafficPolicyGatewayExtensionIR{
@@ -243,7 +251,7 @@ func gatewayExtensionBuilder(
 			p.Jwt = buildCompositeJwtFilter(jwtConfig)
 
 		case gExt.OAuth2 != nil:
-			out, err := buildOAuth2ProviderConfig(ctx, krtctx, &gExt, commoncol.BackendIndex, commoncol.Secrets, oidcDiscoverer)
+			out, err := buildOAuth2ProviderConfig(ctx, krtctx, &gExt, commoncol.BackendIndex, commoncol.Secrets, oidcDiscoverer, saTokens)
 			if err != nil {
 				p.Err = fmt.Errorf("error building OAuth2 config: %w", err)
 				return p

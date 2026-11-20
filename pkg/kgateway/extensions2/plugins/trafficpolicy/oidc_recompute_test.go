@@ -70,7 +70,7 @@ func TestGatewayExtensionRecoversFromOIDCDiscoveryFailure(t *testing.T) {
 				},
 				Credentials: kgateway.OAuth2Credentials{
 					ClientID:        "kgateway",
-					ClientSecretRef: corev1.LocalObjectReference{Name: "dex-client-secret"},
+					ClientSecretRef: &corev1.LocalObjectReference{Name: "dex-client-secret"},
 				},
 			},
 		},
@@ -114,7 +114,7 @@ func TestGatewayExtensionRecoversFromOIDCDiscoveryFailure(t *testing.T) {
 	discoverer.failureRetryInterval = 20 * time.Millisecond
 	go discoverer.run(ctx)
 
-	extensions := krt.NewCollection(commoncol.GatewayExtensions, gatewayExtensionBuilder(ctx, commoncol, discoverer))
+	extensions := krt.NewCollection(commoncol.GatewayExtensions, gatewayExtensionBuilder(ctx, commoncol, discoverer, nil))
 
 	fakeClient.RunAndWait(ctx.Done())
 	require.Eventually(t, func() bool {
@@ -254,7 +254,7 @@ func TestProviderBlipDoesNotBreakHealthyExtension(t *testing.T) {
 				},
 				Credentials: kgateway.OAuth2Credentials{
 					ClientID:        "kgateway",
-					ClientSecretRef: corev1.LocalObjectReference{Name: "dex-client-secret"},
+					ClientSecretRef: &corev1.LocalObjectReference{Name: "dex-client-secret"},
 				},
 			},
 		},
@@ -294,7 +294,7 @@ func TestProviderBlipDoesNotBreakHealthyExtension(t *testing.T) {
 	discoverer.failureRetryInterval = 100 * time.Millisecond
 	go discoverer.run(ctx)
 
-	extensions := krt.NewCollection(commoncol.GatewayExtensions, gatewayExtensionBuilder(ctx, commoncol, discoverer))
+	extensions := krt.NewCollection(commoncol.GatewayExtensions, gatewayExtensionBuilder(ctx, commoncol, discoverer, nil))
 
 	fakeClient.RunAndWait(ctx.Done())
 	require.Eventually(t, func() bool {

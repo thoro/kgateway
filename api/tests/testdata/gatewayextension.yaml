@@ -278,3 +278,57 @@ spec:
     credentials:
       clientSecretRef:
         name: oauth-client
+---
+# GatewayExtension: oauth2 with a ServiceAccount token as client assertion
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: gwext-oauth2-client-assertion
+spec:
+  oauth2:
+    backendRef:
+      name: oauth-provider
+      port: 443
+    issuerURI: https://example.com
+    credentials:
+      clientID: my-client-id
+      clientAssertion:
+        serviceAccountRef:
+          name: oauth-client
+        audience: api://AzureADTokenExchange
+---
+# GatewayExtension: oauth2 rejects both clientSecretRef and clientAssertion
+_err: exactly one of the fields in [clientSecretRef clientAssertion] must be set
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: gwext-oauth2-client-secret-and-assertion
+spec:
+  oauth2:
+    backendRef:
+      name: oauth-provider
+      port: 443
+    issuerURI: https://example.com
+    credentials:
+      clientID: my-client-id
+      clientSecretRef:
+        name: oauth-client
+      clientAssertion:
+        serviceAccountRef:
+          name: oauth-client
+        audience: api://AzureADTokenExchange
+---
+# GatewayExtension: oauth2 requires clientSecretRef or clientAssertion
+_err: exactly one of the fields in [clientSecretRef clientAssertion] must be set
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayExtension
+metadata:
+  name: gwext-oauth2-client-secret-missing
+spec:
+  oauth2:
+    backendRef:
+      name: oauth-provider
+      port: 443
+    issuerURI: https://example.com
+    credentials:
+      clientID: my-client-id

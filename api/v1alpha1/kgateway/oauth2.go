@@ -169,6 +169,7 @@ type OAuth2CookieConfig struct {
 // OAuth2Credentials specifies the Oauth2 client credentials.
 //
 // +kubebuilder:validation:ExactlyOneOf=clientID;clientIDRef
+// +kubebuilder:validation:ExactlyOneOf=clientSecretRef;clientAssertion
 type OAuth2Credentials struct {
 	// ClientID specifies the client ID issued to the client during the registration process.
 	// Refer to https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1 for more details.
@@ -188,8 +189,33 @@ type OAuth2Credentials struct {
 	// ClientSecretRef specifies a Secret that contains the client secret stored in the key 'client-secret'
 	// to use in the authentication request to obtain the access token.
 	// Refer to https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1 for more details.
+	// Exactly one of ClientSecretRef or ClientAssertion must be set.
+	// +optional
+	ClientSecretRef *corev1.LocalObjectReference `json:"clientSecretRef,omitempty"`
+
+	// ClientAssertion authenticates the client with a token for a ServiceAccount instead of a
+	// client secret. The controller requests the token from the Kubernetes API and sends it as
+	// client_assertion (RFC 7523) in the token requests, renewing it before it expires.
+	// The authorization server must trust the cluster's service account issuer for this
+	// ServiceAccount, for example through a federated identity credential.
+	// Exactly one of ClientSecretRef or ClientAssertion must be set.
+	// +optional
+	ClientAssertion *OAuth2ClientAssertion `json:"clientAssertion,omitempty"`
+}
+
+// OAuth2ClientAssertion specifies the ServiceAccount token used as the client assertion.
+type OAuth2ClientAssertion struct {
+	// ServiceAccountRef is the ServiceAccount, in the namespace of the GatewayExtension, that the
+	// token is issued for. Its subject is system:serviceaccount:<namespace>:<name>.
 	// +required
-	ClientSecretRef corev1.LocalObjectReference `json:"clientSecretRef"`
+	ServiceAccountRef corev1.LocalObjectReference `json:"serviceAccountRef"`
+
+	// Audience is the audience of the token, as expected by the authorization server,
+	// for example api://AzureADTokenExchange for Microsoft Entra ID.
+	// +required
+	//
+	// +kubebuilder:validation:MinLength=1
+	Audience string `json:"audience"`
 }
 
 // OAuth2CookieNames specifies the names of the cookies used to store the tokens.
